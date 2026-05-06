@@ -1,0 +1,12 @@
+{
+  "name": "ytbradio-helper",
+  "version": "1.0.0",
+  "description": "Servidor auxiliar para FFS Radio - resolve URLs de stream do YouTube",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

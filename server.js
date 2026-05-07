@@ -16,7 +16,6 @@ const CACHE_MARGIN = 300;
 const COOKIES    = path.join(__dirname, 'cookies.txt');
 const hasCookies = fs.existsSync(COOKIES);
 
-// ─── Caminho do binário yt-dlp ────────────────────────────
 let YTDLP_BIN;
 try {
     YTDLP_BIN = require.resolve('yt-dlp-exec/bin/yt-dlp');
@@ -25,7 +24,6 @@ try {
 }
 console.log('[yt-dlp] Binário:', YTDLP_BIN);
 
-// ─── Atualizar yt-dlp ─────────────────────────────────────
 try {
     execSync(`"${YTDLP_BIN}" --update`, { stdio: 'inherit' });
 } catch(e) {
@@ -43,19 +41,31 @@ function resolveStreamUrl(videoId) {
 
         console.log(`[Resolvendo] ${videoId}`);
 
-        try {
-            const cookiesArg = hasCookies ? `--cookies "${COOKIES}"` : '';
-            // LIST FORMATS MODE - temporario para debug
-            const cmd = `"${YTDLP_BIN}" --list-formats --extractor-args "youtube:player_client=mweb" ${cookiesArg} "https://www.youtube.com/watch?v=${videoId}" 2>&1`;
+        // Tenta cada cliente em sequência até um funcionar
+        const clientes = ['android', 'android_vr', 'tv_embedded'];
 
-            const output = execSync(cmd, { encoding: 'utf8', timeout: 30000 });
-            console.log('[formatos]', output);
-            resolve(output);
-        } catch(e) {
-            const errMsg = (e.stdout || '') + (e.stderr || '') || e.message;
-            console.error('[yt-dlp ERRO]', errMsg.substring(0, 500));
-            reject(new Error(errMsg.substring(0, 500)));
+        for (const cliente of clientes) {
+            try {
+                const cookiesArg = hasCookies ? `--cookies "${COOKIES}"` : '';
+                const cmd = `"${YTDLP_BIN}" --no-warnings --no-playlist --get-url -f bestaudio/best --extractor-args "youtube:player_client=${cliente}" ${cookiesArg} "https://www.youtube.com/watch?v=${videoId}" 2>&1`;
+
+                console.log(`[Tentando cliente: ${cliente}]`);
+                const output = execSync(cmd, { encoding: 'utf8', timeout: 30000 });
+                const streamUrl = output.trim().split('\n').find(l => l.startsWith('http'));
+
+                if (streamUrl) {
+                    const expireMatch = streamUrl.match(/expire=(\d+)/);
+                    const expires = expireMatch ? parseInt(expireMatch[1]) : (Date.now() / 1000 + 3600);
+                    CACHE.set(videoId, { url: streamUrl, expires });
+                    console.log(`[Resolvido com ${cliente}] ${videoId}`);
+                    return resolve(streamUrl);
+                }
+            } catch(e) {
+                console.log(`[Cliente ${cliente} falhou]`, (e.stdout || e.message).substring(0, 150));
+            }
         }
+
+        reject(new Error('Todos os clientes falharam para: ' + videoId));
     });
 }
 
@@ -86,10 +96,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-        const result = await resolveStreamUrl(videoId);
+        const streamUrl = await resolveStreamUrl(videoId);
         res.writeHead(200);
-        res.end(JSON.stringify({ formats: result }));
+        res.end(JSON.stringify({ url: streamUrl }));
     } catch (err) {
+        console.error(`[ERRO] ${videoId}: ${err.message}`);
         res.writeHead(500);
         res.end(JSON.stringify({ error: err.message }));
     }

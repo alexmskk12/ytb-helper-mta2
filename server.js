@@ -1,6 +1,6 @@
 /**
  * FFS Radio - Helper Server
- * Versão Render - usa yt-dlp-exec (npm)
+ * Versão Render - usa yt-dlp-exec (npm) com extractor-args para JS runtime
  */
 const http      = require('http');
 const url       = require('url');
@@ -26,14 +26,12 @@ try {
     console.log('[yt-dlp] Update falhou, continuando com versão atual...');
 }
 
-// ─── Debug: listar formatos ───────────────────────────────
-function listarFormatos(videoId) {
-    return new Promise((resolve, reject) => {
-        const opts = { listFormats: true };
-        if (hasCookies) opts.cookies = COOKIES;
-        ytDlpExec(`https://www.youtube.com/watch?v=${videoId}`, opts)
-            .then(resolve).catch(reject);
-    });
+// ─── Instalar jsdom para o challenge solver ────────────────
+try {
+    console.log('[yt-dlp] Verificando jsSolver...');
+    execSync('node_modules/yt-dlp-exec/bin/yt-dlp --install-script jsinterp', { stdio: 'inherit' });
+} catch(e) {
+    console.log('[yt-dlp] jsSolver não disponível, continuando...');
 }
 
 // ─── Resolver via yt-dlp-exec ─────────────────────────────
@@ -51,6 +49,7 @@ function resolveStreamUrl(videoId) {
             noWarnings: true,
             noPlaylist: true,
             getUrl: true,
+            extractorArgs: 'youtube:player_client=web,default',
         };
 
         if (hasCookies) opts.cookies = COOKIES;
@@ -85,18 +84,6 @@ const server = http.createServer(async (req, res) => {
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
-
-    if (parsed.pathname === '/formats') {
-        try {
-            const fmt = await listarFormatos(videoId || 'dQw4w9WgXcQ');
-            res.writeHead(200);
-            res.end(JSON.stringify({ formats: fmt }));
-        } catch(err) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-        }
-        return;
-    }
 
     if (parsed.pathname === '/ping') {
         res.writeHead(200);

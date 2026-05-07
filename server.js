@@ -37,11 +37,17 @@ try {
 // ─── Resolver via yt-dlp-exec ─────────────────────────────
 function resolveStreamUrl(videoId) {
     return new Promise((resolve, reject) => {
-        const cached = CACHE.get(videoId);
-        if (cached && cached.expires > Date.now() / 1000 + CACHE_MARGIN) {
-            console.log(`[Cache HIT] ${videoId}`);
-            return resolve(cached.url);
+        try {
+            const output = execSync(
+                `node_modules/yt-dlp-exec/bin/yt-dlp --list-formats --extractor-args "youtube:player_client=mweb" --cookies cookies.txt "https://www.youtube.com/watch?v=${videoId}" 2>&1`,
+                { cwd: __dirname, encoding: 'utf8', timeout: 30000 }
+            );
+            resolve(output);
+        } catch(e) {
+            reject(new Error(e.stdout + e.stderr));
         }
+    });
+}
 
         console.log(`[Resolvendo] ${videoId}`);
 

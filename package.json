@@ -7,7 +7,7 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "yt-dlp-exec": "^1.0.2"
+    "@distube/ytdl-core": "^4.14.4"
   },
   "engines": {
     "node": ">=18"

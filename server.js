@@ -2,11 +2,11 @@
  * FFS Radio - Helper Server
  * Versão Render - usa yt-dlp-exec (npm)
  */
-
-const http     = require('http');
-const url      = require('url');
-const fs       = require('fs');
-const path     = require('path');
+const http      = require('http');
+const url       = require('url');
+const fs        = require('fs');
+const path      = require('path');
+const { execSync } = require('child_process');
 const ytDlpExec = require('yt-dlp-exec');
 
 const PORT         = process.env.PORT || 9876;
@@ -16,6 +16,15 @@ const CACHE_MARGIN = 300;
 
 const COOKIES    = path.join(__dirname, 'cookies.txt');
 const hasCookies = fs.existsSync(COOKIES);
+
+// ─── Atualizar yt-dlp ─────────────────────────────────────
+try {
+    console.log('[yt-dlp] Atualizando binário...');
+    execSync('node_modules/yt-dlp-exec/bin/yt-dlp --update', { stdio: 'inherit' });
+    console.log('[yt-dlp] Atualização concluída!');
+} catch(e) {
+    console.log('[yt-dlp] Update falhou, continuando com versão atual...');
+}
 
 // ─── Resolver via yt-dlp-exec ─────────────────────────────
 function resolveStreamUrl(videoId) {
@@ -31,7 +40,6 @@ function resolveStreamUrl(videoId) {
         const opts = {
             noWarnings: true,
             noPlaylist: true,
-            format: '18',
             getUrl: true,
         };
 

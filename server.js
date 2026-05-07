@@ -31,7 +31,6 @@ function resolveStreamUrl(videoId) {
         const opts = {
             noWarnings: true,
             noPlaylist: true,
-            format: 'bestaudio/best/worstaudio/worst',
             getUrl: true,
         };
 

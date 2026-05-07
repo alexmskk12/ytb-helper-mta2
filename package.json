@@ -1,11 +1,13 @@
 {
   "name": "ytbradio-helper",
   "version": "1.0.0",
-  "description": "Servidor auxiliar para FFS Radio - resolve URLs de stream do YouTube",
+  "description": "Servidor auxiliar para FFS Radio",
   "main": "server.js",
   "scripts": {
-    "build": "pip install yt-dlp --break-system-packages || pip3 install yt-dlp --break-system-packages || true",
     "start": "node server.js"
+  },
+  "dependencies": {
+    "yt-dlp-exec": "^1.0.2"
   },
   "engines": {
     "node": ">=18"

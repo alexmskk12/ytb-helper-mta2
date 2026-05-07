@@ -1,13 +1,12 @@
 /**
  * FFS Radio - Helper Server
- * Versão Render - usa yt-dlp-exec (npm) com extractor-args para JS runtime
+ * Versão Render - usa yt-dlp-exec (npm)
  */
 const http      = require('http');
 const url       = require('url');
 const fs        = require('fs');
 const path      = require('path');
 const { execSync } = require('child_process');
-const ytDlpExec = require('yt-dlp-exec');
 
 const PORT         = process.env.PORT || 9876;
 const HOST         = '0.0.0.0';
@@ -23,63 +22,46 @@ try {
     execSync('node_modules/yt-dlp-exec/bin/yt-dlp --update', { stdio: 'inherit' });
     console.log('[yt-dlp] Atualização concluída!');
 } catch(e) {
-    console.log('[yt-dlp] Update falhou, continuando com versão atual...');
+    console.log('[yt-dlp] Update falhou, continuando...');
 }
 
-// ─── Instalar jsdom para o challenge solver ────────────────
-try {
-    console.log('[yt-dlp] Verificando jsSolver...');
-    execSync('node_modules/yt-dlp-exec/bin/yt-dlp --install-script jsinterp', { stdio: 'inherit' });
-} catch(e) {
-    console.log('[yt-dlp] jsSolver não disponível, continuando...');
-}
-
-// ─── Resolver via yt-dlp-exec ─────────────────────────────
+// ─── Resolver via execSync ────────────────────────────────
 function resolveStreamUrl(videoId) {
     return new Promise((resolve, reject) => {
-        try {
-            const output = execSync(
-                `node_modules/yt-dlp-exec/bin/yt-dlp --list-formats --extractor-args "youtube:player_client=mweb" --cookies cookies.txt "https://www.youtube.com/watch?v=${videoId}" 2>&1`,
-                { cwd: __dirname, encoding: 'utf8', timeout: 30000 }
-            );
-            resolve(output);
-        } catch(e) {
-            reject(new Error(e.stdout + e.stderr));
+        const cached = CACHE.get(videoId);
+        if (cached && cached.expires > Date.now() / 1000 + CACHE_MARGIN) {
+            console.log(`[Cache HIT] ${videoId}`);
+            return resolve(cached.url);
         }
-    });
-}
 
         console.log(`[Resolvendo] ${videoId}`);
 
-    const opts = {
-    noWarnings: true,
-    noPlaylist: true,
-    listFormats: true,
-    extractorArgs: 'youtube:player_client=mweb',
-};
+        try {
+            const cookiesArg = hasCookies ? `--cookies "${COOKIES}"` : '';
+            const output = execSync(
+                `node_modules/yt-dlp-exec/bin/yt-dlp --no-warnings --no-playlist --get-url --extractor-args "youtube:player_client=mweb" ${cookiesArg} "https://www.youtube.com/watch?v=${videoId}" 2>&1`,
+                { cwd: __dirname, encoding: 'utf8', timeout: 30000 }
+            );
 
-        if (hasCookies) opts.cookies = COOKIES;
+            console.log('[yt-dlp output]', output.substring(0, 300));
 
-        ytDlpExec(`https://www.youtube.com/watch?v=${videoId}`, opts)
-            .then((output) => {
-                const streamUrl = output.trim().split('\n')[0];
-                console.log('[yt-dlp] URL obtida:', streamUrl.substring(0, 80) + '...');
+            const streamUrl = output.trim().split('\n').find(l => l.startsWith('http'));
 
-                if (!streamUrl || !streamUrl.startsWith('http')) {
-                    return reject(new Error('URL inválida retornada pelo yt-dlp'));
-                }
+            if (!streamUrl) {
+                return reject(new Error('URL inválida: ' + output.substring(0, 200)));
+            }
 
-                const expireMatch = streamUrl.match(/expire=(\d+)/);
-                const expires = expireMatch ? parseInt(expireMatch[1]) : (Date.now() / 1000 + 3600);
+            const expireMatch = streamUrl.match(/expire=(\d+)/);
+            const expires = expireMatch ? parseInt(expireMatch[1]) : (Date.now() / 1000 + 3600);
 
-                CACHE.set(videoId, { url: streamUrl, expires });
-                console.log(`[Resolvido] ${videoId} | expire=${new Date(expires * 1000).toISOString()}`);
-                resolve(streamUrl);
-            })
-            .catch((err) => {
-                console.error('[yt-dlp ERRO]', err.message);
-                reject(err);
-            });
+            CACHE.set(videoId, { url: streamUrl, expires });
+            console.log(`[Resolvido] ${videoId}`);
+            resolve(streamUrl);
+        } catch(e) {
+            const errMsg = (e.stdout || '') + (e.stderr || '') || e.message;
+            console.error('[yt-dlp ERRO]', errMsg.substring(0, 300));
+            reject(new Error(errMsg.substring(0, 300)));
+        }
     });
 }
 

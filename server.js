@@ -1,36 +1,45 @@
 /**
  * FFS Radio - Helper Server
- * Versão Render - usa yt-dlp-exec (npm)
+ * Versão Render - usa @distube/ytdl-core
  */
-const http      = require('http');
-const url       = require('url');
-const fs        = require('fs');
-const path      = require('path');
-const { execSync } = require('child_process');
+const http   = require('http');
+const url    = require('url');
+const fs     = require('fs');
+const path   = require('path');
+const ytdl   = require('@distube/ytdl-core');
 
 const PORT         = process.env.PORT || 9876;
 const HOST         = '0.0.0.0';
 const CACHE        = new Map();
 const CACHE_MARGIN = 300;
 
-const COOKIES    = path.join(__dirname, 'cookies.txt');
-const hasCookies = fs.existsSync(COOKIES);
+const COOKIES_FILE = path.join(__dirname, 'cookies.txt');
 
-let YTDLP_BIN;
-try {
-    YTDLP_BIN = require.resolve('yt-dlp-exec/bin/yt-dlp');
-} catch(e) {
-    YTDLP_BIN = path.join(__dirname, 'node_modules/yt-dlp-exec/bin/yt-dlp');
+// ─── Carregar cookies do arquivo ──────────────────────────
+function loadCookies() {
+    try {
+        if (!fs.existsSync(COOKIES_FILE)) return null;
+        const lines = fs.readFileSync(COOKIES_FILE, 'utf8').split('\n');
+        const cookies = [];
+        for (const line of lines) {
+            if (line.startsWith('#') || !line.trim()) continue;
+            const parts = line.split('\t');
+            if (parts.length >= 7) {
+                cookies.push({ name: parts[5], value: parts[6].trim(), domain: parts[0] });
+            }
+        }
+        console.log(`[Cookies] ${cookies.length} cookies carregados`);
+        return cookies.length > 0 ? cookies : null;
+    } catch(e) {
+        console.error('[Cookies] Erro ao carregar:', e.message);
+        return null;
+    }
 }
-console.log('[yt-dlp] Binário:', YTDLP_BIN);
 
-try {
-    execSync(`"${YTDLP_BIN}" --update`, { stdio: 'inherit' });
-} catch(e) {
-    console.log('[yt-dlp] Update falhou, continuando...');
-}
+const cookies = loadCookies();
+const agent = cookies ? ytdl.createAgent(cookies) : null;
 
-// ─── Resolver via execSync ────────────────────────────────
+// ─── Resolver URL de stream ───────────────────────────────
 function resolveStreamUrl(videoId) {
     return new Promise((resolve, reject) => {
         const cached = CACHE.get(videoId);
@@ -41,31 +50,30 @@ function resolveStreamUrl(videoId) {
 
         console.log(`[Resolvendo] ${videoId}`);
 
-        // Tenta cada cliente em sequência até um funcionar
-        const clientes = ['android', 'android_vr', 'tv_embedded'];
+        const opts = { quality: 'highestaudio' };
+        if (agent) opts.agent = agent;
 
-        for (const cliente of clientes) {
-            try {
-                const cookiesArg = hasCookies ? `--cookies "${COOKIES}"` : '';
-                const cmd = `"${YTDLP_BIN}" --no-warnings --no-playlist --get-url -f bestaudio/best --extractor-args "youtube:player_client=${cliente}" ${cookiesArg} "https://www.youtube.com/watch?v=${videoId}" 2>&1`;
+        ytdl.getInfo(`https://www.youtube.com/watch?v=${videoId}`, agent ? { agent } : {})
+            .then(info => {
+                const format = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' })
+                    || ytdl.chooseFormat(info.formats, { quality: 'highest' });
 
-                console.log(`[Tentando cliente: ${cliente}]`);
-                const output = execSync(cmd, { encoding: 'utf8', timeout: 30000 });
-                const streamUrl = output.trim().split('\n').find(l => l.startsWith('http'));
-
-                if (streamUrl) {
-                    const expireMatch = streamUrl.match(/expire=(\d+)/);
-                    const expires = expireMatch ? parseInt(expireMatch[1]) : (Date.now() / 1000 + 3600);
-                    CACHE.set(videoId, { url: streamUrl, expires });
-                    console.log(`[Resolvido com ${cliente}] ${videoId}`);
-                    return resolve(streamUrl);
+                if (!format || !format.url) {
+                    return reject(new Error('Nenhum formato encontrado'));
                 }
-            } catch(e) {
-                console.log(`[Cliente ${cliente} falhou]`, (e.stdout || e.message).substring(0, 150));
-            }
-        }
 
-        reject(new Error('Todos os clientes falharam para: ' + videoId));
+                console.log(`[Resolvido] ${videoId} | codec: ${format.audioCodec} | bitrate: ${format.audioBitrate}`);
+
+                const expireMatch = format.url.match(/expire=(\d+)/);
+                const expires = expireMatch ? parseInt(expireMatch[1]) : (Date.now() / 1000 + 3600);
+                CACHE.set(videoId, { url: format.url, expires });
+
+                resolve(format.url);
+            })
+            .catch(err => {
+                console.error(`[ERRO] ${videoId}:`, err.message);
+                reject(err);
+            });
     });
 }
 
@@ -79,7 +87,7 @@ const server = http.createServer(async (req, res) => {
 
     if (parsed.pathname === '/ping') {
         res.writeHead(200);
-        res.end(JSON.stringify({ status: 'ok', cookies: hasCookies }));
+        res.end(JSON.stringify({ status: 'ok', cookies: !!agent }));
         return;
     }
 
@@ -101,13 +109,16 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ url: streamUrl }));
     } catch (err) {
         console.error(`[ERRO] ${videoId}: ${err.message}`);
-        res.writeHead(500);
+        const status = err.message.includes('429') ? 429
+                     : err.message.includes('410') ? 410
+                     : 500;
+        res.writeHead(status);
         res.end(JSON.stringify({ error: err.message }));
     }
 });
 
 // ─── Init ─────────────────────────────────────────────────
-console.log(`[FFS Radio Helper] Cookies: ${hasCookies ? 'SIM ✓' : 'NÃO'}`);
+console.log(`[FFS Radio Helper] Cookies: ${agent ? 'SIM ✓' : 'NÃO'}`);
 server.listen(PORT, HOST, () => {
     console.log(`[FFS Radio Helper] Rodando em http://${HOST}:${PORT}`);
 });

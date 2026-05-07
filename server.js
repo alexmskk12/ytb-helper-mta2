@@ -49,7 +49,7 @@ function resolveStreamUrl(videoId) {
             noWarnings: true,
             noPlaylist: true,
             getUrl: true,
-            extractorArgs: 'youtube:player_client=web,default',
+            extractorArgs: 'youtube:player_client=tv,default',
         };
 
         if (hasCookies) opts.cookies = COOKIES;

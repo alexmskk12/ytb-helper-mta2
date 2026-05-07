@@ -1,8 +1,6 @@
 /**
  * FFS Radio - Helper Server (yt-dlp edition)
- * Versão Linux/Railway - baixa o yt-dlp automaticamente
- *
- * Rodar: node server.js
+ * Versão Linux/Render - baixa o yt-dlp automaticamente
  */
 
 const http     = require('http');
@@ -10,7 +8,7 @@ const url      = require('url');
 const fs       = require('fs');
 const path     = require('path');
 const https    = require('https');
-const { execFile, exec } = require('child_process');
+const { execFile } = require('child_process');
 
 const PORT         = process.env.PORT || 9876;
 const HOST         = '0.0.0.0';
@@ -58,8 +56,23 @@ function downloadYtDlp() {
     });
 }
 
-const COOKIES  = path.join(__dirname, 'cookies.txt');
+const COOKIES    = path.join(__dirname, 'cookies.txt');
 const hasCookies = fs.existsSync(COOKIES);
+
+// ─── Teste do binário ─────────────────────────────────────
+function testarYtDlp() {
+    return new Promise((resolve) => {
+        execFile(YTDLP, ['--version'], (err, stdout, stderr) => {
+            if (err) {
+                console.error('[yt-dlp version] ERRO:', err.message);
+                console.error('[yt-dlp version] stderr:', stderr.trim());
+            } else {
+                console.log('[yt-dlp version] OK:', stdout.trim());
+            }
+            resolve();
+        });
+    });
+}
 
 // ─── Resolver via yt-dlp ──────────────────────────────────
 function resolveStreamUrl(videoId) {
@@ -83,13 +96,13 @@ function resolveStreamUrl(videoId) {
 
         args.push(`https://www.youtube.com/watch?v=${videoId}`);
 
-execFile(YTDLP, args, { timeout: 30000 }, (err, stdout, stderr) => {
-    console.log('[yt-dlp stdout]', stdout.trim().substring(0, 300));
-    console.log('[yt-dlp stderr]', stderr.trim().substring(0, 300));
-    if (err) {
-        console.error('[yt-dlp ERRO]', err.message);
-        return reject(new Error(stderr.trim() || err.message));
-    }
+        execFile(YTDLP, args, { timeout: 30000 }, (err, stdout, stderr) => {
+            console.log('[yt-dlp stdout]', stdout.trim().substring(0, 300));
+            console.log('[yt-dlp stderr]', stderr.trim().substring(0, 500));
+            if (err) {
+                console.error('[yt-dlp ERRO código]', err.code, err.message);
+                return reject(new Error(stderr.trim() || err.message));
+            }
 
             const streamUrl = stdout.trim().split('\n')[0];
             if (!streamUrl || !streamUrl.startsWith('http')) {
@@ -147,15 +160,18 @@ const server = http.createServer(async (req, res) => {
 });
 
 // ─── Init ─────────────────────────────────────────────────
-downloadYtDlp().then(() => {
-    console.log(`[FFS Radio Helper] Cookies: ${hasCookies ? 'SIM ✓' : 'NÃO'}`);
-    server.listen(PORT, HOST, () => {
-        console.log(`[FFS Radio Helper] Rodando em http://${HOST}:${PORT}`);
+downloadYtDlp()
+    .then(testarYtDlp)
+    .then(() => {
+        console.log(`[FFS Radio Helper] Cookies: ${hasCookies ? 'SIM ✓' : 'NÃO'}`);
+        server.listen(PORT, HOST, () => {
+            console.log(`[FFS Radio Helper] Rodando em http://${HOST}:${PORT}`);
+        });
+    })
+    .catch((err) => {
+        console.error('[ERRO] Falha ao iniciar:', err.message);
+        process.exit(1);
     });
-}).catch((err) => {
-    console.error('[ERRO] Falha ao baixar yt-dlp:', err.message);
-    process.exit(1);
-});
 
 server.on('error', (e) => {
     if (e.code === 'EADDRINUSE') {

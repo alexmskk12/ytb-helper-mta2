@@ -46,12 +46,11 @@ function resolveStreamUrl(videoId) {
         console.log(`[Resolvendo] ${videoId}`);
 
     const opts = {
-        noWarnings: true,
-        noPlaylist: true,
-        getUrl: true,
-        format: 'bestaudio',
-        extractorArgs: 'youtube:player_client=mweb',
-    };
+    noWarnings: true,
+    noPlaylist: true,
+    listFormats: true,
+    extractorArgs: 'youtube:player_client=mweb',
+};
 
         if (hasCookies) opts.cookies = COOKIES;
 

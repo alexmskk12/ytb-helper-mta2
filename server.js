@@ -50,7 +50,7 @@ function resolveStreamUrl(videoId) {
         noPlaylist: true,
         getUrl: true,
         format: 'bestaudio',
-        extractorArgs: 'youtube:player_client=ios',
+        extractorArgs: 'youtube:player_client=mweb',
     };
 
         if (hasCookies) opts.cookies = COOKIES;

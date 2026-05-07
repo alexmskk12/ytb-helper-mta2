@@ -1,41 +1,23 @@
 /**
  * FFS Radio - Helper Server
- * Versão Render - usa yt-dlp instalado via pip
+ * Versão Render - usa yt-dlp-exec (npm)
  */
 
 const http     = require('http');
 const url      = require('url');
 const fs       = require('fs');
 const path     = require('path');
-const { execFile } = require('child_process');
+const ytDlpExec = require('yt-dlp-exec');
 
 const PORT         = process.env.PORT || 9876;
 const HOST         = '0.0.0.0';
 const CACHE        = new Map();
 const CACHE_MARGIN = 300;
 
-// yt-dlp instalado via pip, disponível no PATH
-const YTDLP = 'yt-dlp';
-
 const COOKIES    = path.join(__dirname, 'cookies.txt');
 const hasCookies = fs.existsSync(COOKIES);
 
-// ─── Verificar yt-dlp ─────────────────────────────────────
-function verificarYtDlp() {
-    return new Promise((resolve) => {
-        execFile(YTDLP, ['--version'], (err, stdout, stderr) => {
-            if (err) {
-                console.error('[yt-dlp] NÃO encontrado no PATH:', err.message);
-                console.error('[yt-dlp] stderr:', stderr.trim());
-            } else {
-                console.log('[yt-dlp] OK versão:', stdout.trim());
-            }
-            resolve();
-        });
-    });
-}
-
-// ─── Resolver via yt-dlp ──────────────────────────────────
+// ─── Resolver via yt-dlp-exec ─────────────────────────────
 function resolveStreamUrl(videoId) {
     return new Promise((resolve, reject) => {
         const cached = CACHE.get(videoId);
@@ -46,37 +28,35 @@ function resolveStreamUrl(videoId) {
 
         console.log(`[Resolvendo] ${videoId}`);
 
-        const args = [
-            '--no-warnings',
-            '--no-playlist',
-            '-f', 'bestaudio/best',
-            '--get-url',
-        ];
+        const opts = {
+            noWarnings: true,
+            noPlaylist: true,
+            format: 'bestaudio/best',
+            getUrl: true,
+        };
 
-        if (hasCookies) args.push('--cookies', COOKIES);
+        if (hasCookies) opts.cookies = COOKIES;
 
-        args.push(`https://www.youtube.com/watch?v=${videoId}`);
+        ytDlpExec(`https://www.youtube.com/watch?v=${videoId}`, opts)
+            .then((output) => {
+                const streamUrl = output.trim().split('\n')[0];
+                console.log('[yt-dlp] URL obtida:', streamUrl.substring(0, 80) + '...');
 
-        execFile(YTDLP, args, { timeout: 30000 }, (err, stdout, stderr) => {
-            console.log('[yt-dlp stdout]', stdout.trim().substring(0, 300));
-            console.log('[yt-dlp stderr]', stderr.trim().substring(0, 500));
-            if (err) {
-                console.error('[yt-dlp ERRO]', err.code, err.message);
-                return reject(new Error(stderr.trim() || err.message));
-            }
+                if (!streamUrl || !streamUrl.startsWith('http')) {
+                    return reject(new Error('URL inválida retornada pelo yt-dlp'));
+                }
 
-            const streamUrl = stdout.trim().split('\n')[0];
-            if (!streamUrl || !streamUrl.startsWith('http')) {
-                return reject(new Error('URL inválida retornada pelo yt-dlp'));
-            }
+                const expireMatch = streamUrl.match(/expire=(\d+)/);
+                const expires = expireMatch ? parseInt(expireMatch[1]) : (Date.now() / 1000 + 3600);
 
-            const expireMatch = streamUrl.match(/expire=(\d+)/);
-            const expires = expireMatch ? parseInt(expireMatch[1]) : (Date.now() / 1000 + 3600);
-
-            CACHE.set(videoId, { url: streamUrl, expires });
-            console.log(`[Resolvido] ${videoId} | expire=${new Date(expires * 1000).toISOString()}`);
-            resolve(streamUrl);
-        });
+                CACHE.set(videoId, { url: streamUrl, expires });
+                console.log(`[Resolvido] ${videoId} | expire=${new Date(expires * 1000).toISOString()}`);
+                resolve(streamUrl);
+            })
+            .catch((err) => {
+                console.error('[yt-dlp ERRO]', err.message);
+                reject(err);
+            });
     });
 }
 
@@ -121,18 +101,12 @@ const server = http.createServer(async (req, res) => {
 });
 
 // ─── Init ─────────────────────────────────────────────────
-verificarYtDlp().then(() => {
-    console.log(`[FFS Radio Helper] Cookies: ${hasCookies ? 'SIM ✓' : 'NÃO'}`);
-    server.listen(PORT, HOST, () => {
-        console.log(`[FFS Radio Helper] Rodando em http://${HOST}:${PORT}`);
-    });
+console.log(`[FFS Radio Helper] Cookies: ${hasCookies ? 'SIM ✓' : 'NÃO'}`);
+server.listen(PORT, HOST, () => {
+    console.log(`[FFS Radio Helper] Rodando em http://${HOST}:${PORT}`);
 });
 
 server.on('error', (e) => {
-    if (e.code === 'EADDRINUSE') {
-        console.error(`[ERRO] Porta ${PORT} já em uso.`);
-    } else {
-        console.error('[ERRO] Servidor:', e.message);
-    }
+    console.error('[ERRO] Servidor:', e.message);
     process.exit(1);
 });

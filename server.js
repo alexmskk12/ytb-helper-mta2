@@ -27,9 +27,7 @@ console.log('[yt-dlp] Binário:', YTDLP_BIN);
 
 // ─── Atualizar yt-dlp ─────────────────────────────────────
 try {
-    console.log('[yt-dlp] Atualizando...');
     execSync(`"${YTDLP_BIN}" --update`, { stdio: 'inherit' });
-    console.log('[yt-dlp] Atualizado!');
 } catch(e) {
     console.log('[yt-dlp] Update falhou, continuando...');
 }
@@ -47,25 +45,12 @@ function resolveStreamUrl(videoId) {
 
         try {
             const cookiesArg = hasCookies ? `--cookies "${COOKIES}"` : '';
-            const cmd = `"${YTDLP_BIN}" --no-warnings --no-playlist --get-url --extractor-args "youtube:player_client=mweb" ${cookiesArg} "https://www.youtube.com/watch?v=${videoId}" 2>&1`;
-            console.log('[cmd]', cmd);
+            // LIST FORMATS MODE - temporario para debug
+            const cmd = `"${YTDLP_BIN}" --list-formats --extractor-args "youtube:player_client=mweb" ${cookiesArg} "https://www.youtube.com/watch?v=${videoId}" 2>&1`;
 
             const output = execSync(cmd, { encoding: 'utf8', timeout: 30000 });
-
-            console.log('[yt-dlp output]', output.substring(0, 300));
-
-            const streamUrl = output.trim().split('\n').find(l => l.startsWith('http'));
-
-            if (!streamUrl) {
-                return reject(new Error('URL inválida: ' + output.substring(0, 200)));
-            }
-
-            const expireMatch = streamUrl.match(/expire=(\d+)/);
-            const expires = expireMatch ? parseInt(expireMatch[1]) : (Date.now() / 1000 + 3600);
-
-            CACHE.set(videoId, { url: streamUrl, expires });
-            console.log(`[Resolvido] ${videoId}`);
-            resolve(streamUrl);
+            console.log('[formatos]', output);
+            resolve(output);
         } catch(e) {
             const errMsg = (e.stdout || '') + (e.stderr || '') || e.message;
             console.error('[yt-dlp ERRO]', errMsg.substring(0, 500));
@@ -101,15 +86,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-        const streamUrl = await resolveStreamUrl(videoId);
+        const result = await resolveStreamUrl(videoId);
         res.writeHead(200);
-        res.end(JSON.stringify({ url: streamUrl }));
+        res.end(JSON.stringify({ formats: result }));
     } catch (err) {
-        console.error(`[ERRO] ${videoId}: ${err.message}`);
-        const status = err.message.includes('429') ? 429
-                     : err.message.includes('410') ? 410
-                     : 500;
-        res.writeHead(status);
+        res.writeHead(500);
         res.end(JSON.stringify({ error: err.message }));
     }
 });

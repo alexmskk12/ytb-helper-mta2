@@ -84,11 +84,12 @@ function resolveStreamUrl(videoId) {
         args.push(`https://www.youtube.com/watch?v=${videoId}`);
 
 execFile(YTDLP, args, { timeout: 30000 }, (err, stdout, stderr) => {
+    console.log('[yt-dlp stdout]', stdout.trim().substring(0, 300));
+    console.log('[yt-dlp stderr]', stderr.trim().substring(0, 300));
     if (err) {
-        console.error('[yt-dlp ERRO]', stderr.trim() || err.message);
+        console.error('[yt-dlp ERRO]', err.message);
         return reject(new Error(stderr.trim() || err.message));
     }
-    console.log('[yt-dlp stdout]', stdout.trim().substring(0, 200));
 
             const streamUrl = stdout.trim().split('\n')[0];
             if (!streamUrl || !streamUrl.startsWith('http')) {

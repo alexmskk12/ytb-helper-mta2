@@ -1,13 +1,12 @@
 /**
- * FFS Radio - Helper Server (yt-dlp edition)
- * Versão Linux/Render - baixa o yt-dlp automaticamente
+ * FFS Radio - Helper Server
+ * Versão Render - usa yt-dlp instalado via pip
  */
 
 const http     = require('http');
 const url      = require('url');
 const fs       = require('fs');
 const path     = require('path');
-const https    = require('https');
 const { execFile } = require('child_process');
 
 const PORT         = process.env.PORT || 9876;
@@ -15,59 +14,21 @@ const HOST         = '0.0.0.0';
 const CACHE        = new Map();
 const CACHE_MARGIN = 300;
 
-const YTDLP = path.join(__dirname, 'yt-dlp');
-
-// ─── Download yt-dlp Linux se não existir ─────────────────
-function downloadYtDlp() {
-    return new Promise((resolve, reject) => {
-        if (fs.existsSync(YTDLP)) {
-            console.log('[FFS Radio Helper] yt-dlp encontrado!');
-            return resolve();
-        }
-
-        console.log('[FFS Radio Helper] Baixando yt-dlp para Linux...');
-        const file = fs.createWriteStream(YTDLP);
-        const ytdlpUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux';
-
-        https.get(ytdlpUrl, (res) => {
-            if (res.statusCode === 302 || res.statusCode === 301) {
-                https.get(res.headers.location, (res2) => {
-                    res2.pipe(file);
-                    file.on('finish', () => {
-                        file.close();
-                        fs.chmodSync(YTDLP, '755');
-                        console.log('[FFS Radio Helper] yt-dlp baixado com sucesso!');
-                        resolve();
-                    });
-                }).on('error', reject);
-            } else {
-                res.pipe(file);
-                file.on('finish', () => {
-                    file.close();
-                    fs.chmodSync(YTDLP, '755');
-                    console.log('[FFS Radio Helper] yt-dlp baixado com sucesso!');
-                    resolve();
-                });
-            }
-        }).on('error', (err) => {
-            fs.unlink(YTDLP, () => {});
-            reject(err);
-        });
-    });
-}
+// yt-dlp instalado via pip, disponível no PATH
+const YTDLP = 'yt-dlp';
 
 const COOKIES    = path.join(__dirname, 'cookies.txt');
 const hasCookies = fs.existsSync(COOKIES);
 
-// ─── Teste do binário ─────────────────────────────────────
-function testarYtDlp() {
+// ─── Verificar yt-dlp ─────────────────────────────────────
+function verificarYtDlp() {
     return new Promise((resolve) => {
         execFile(YTDLP, ['--version'], (err, stdout, stderr) => {
             if (err) {
-                console.error('[yt-dlp version] ERRO:', err.message);
-                console.error('[yt-dlp version] stderr:', stderr.trim());
+                console.error('[yt-dlp] NÃO encontrado no PATH:', err.message);
+                console.error('[yt-dlp] stderr:', stderr.trim());
             } else {
-                console.log('[yt-dlp version] OK:', stdout.trim());
+                console.log('[yt-dlp] OK versão:', stdout.trim());
             }
             resolve();
         });
@@ -100,7 +61,7 @@ function resolveStreamUrl(videoId) {
             console.log('[yt-dlp stdout]', stdout.trim().substring(0, 300));
             console.log('[yt-dlp stderr]', stderr.trim().substring(0, 500));
             if (err) {
-                console.error('[yt-dlp ERRO código]', err.code, err.message);
+                console.error('[yt-dlp ERRO]', err.code, err.message);
                 return reject(new Error(stderr.trim() || err.message));
             }
 
@@ -160,18 +121,12 @@ const server = http.createServer(async (req, res) => {
 });
 
 // ─── Init ─────────────────────────────────────────────────
-downloadYtDlp()
-    .then(testarYtDlp)
-    .then(() => {
-        console.log(`[FFS Radio Helper] Cookies: ${hasCookies ? 'SIM ✓' : 'NÃO'}`);
-        server.listen(PORT, HOST, () => {
-            console.log(`[FFS Radio Helper] Rodando em http://${HOST}:${PORT}`);
-        });
-    })
-    .catch((err) => {
-        console.error('[ERRO] Falha ao iniciar:', err.message);
-        process.exit(1);
+verificarYtDlp().then(() => {
+    console.log(`[FFS Radio Helper] Cookies: ${hasCookies ? 'SIM ✓' : 'NÃO'}`);
+    server.listen(PORT, HOST, () => {
+        console.log(`[FFS Radio Helper] Rodando em http://${HOST}:${PORT}`);
     });
+});
 
 server.on('error', (e) => {
     if (e.code === 'EADDRINUSE') {

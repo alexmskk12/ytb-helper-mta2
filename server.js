@@ -26,6 +26,16 @@ try {
     console.log('[yt-dlp] Update falhou, continuando com versão atual...');
 }
 
+// ─── Debug: listar formatos ───────────────────────────────
+function listarFormatos(videoId) {
+    return new Promise((resolve, reject) => {
+        const opts = { listFormats: true };
+        if (hasCookies) opts.cookies = COOKIES;
+        ytDlpExec(`https://www.youtube.com/watch?v=${videoId}`, opts)
+            .then(resolve).catch(reject);
+    });
+}
+
 // ─── Resolver via yt-dlp-exec ─────────────────────────────
 function resolveStreamUrl(videoId) {
     return new Promise((resolve, reject) => {
@@ -75,6 +85,18 @@ const server = http.createServer(async (req, res) => {
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
+
+    if (parsed.pathname === '/formats') {
+        try {
+            const fmt = await listarFormatos(videoId || 'dQw4w9WgXcQ');
+            res.writeHead(200);
+            res.end(JSON.stringify({ formats: fmt }));
+        } catch(err) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
 
     if (parsed.pathname === '/ping') {
         res.writeHead(200);

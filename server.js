@@ -31,6 +31,7 @@ function resolveStreamUrl(videoId) {
         const opts = {
             noWarnings: true,
             noPlaylist: true,
+            format: '18',
             getUrl: true,
         };
 
